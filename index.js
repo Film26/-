@@ -3,7 +3,7 @@ const { chromium } = require('playwright');
 const ExcelJS = require('exceljs');
 const app = express();
 
-// 🛠️ จุดแก้ไขที่ 1: ใส่ Token ของ Browserless.io ที่สมัครได้ฟรีลงตรงนี้ครับ
+// 🛠️ สำคัญมาก: ต้องไปสมัครที่ browserless.io (ฟรี) แล้วเอา Token ยาวๆ มาแปะตรงนี้ครับ
 const BROWSERLESS_TOKEN = "วาง_TOKEN_ของคุณตรงนี้"; 
 
 app.get('/', (req, res) => {
@@ -13,74 +13,68 @@ app.get('/', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Astro Daily Full Table Exporter</title>
+        <title>Astro Daily Table Exporter</title>
         <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="bg-slate-100 min-h-screen flex items-center justify-center p-4">
         <div class="bg-white p-10 rounded-3xl shadow-2xl w-full max-w-xl border border-slate-50 text-center">
             <h1 class="text-3xl font-bold text-indigo-600 mb-2 tracking-tight">ระบบดึงข้อมูลปฏิทินดาราศาสตร์</h1>
-            <h1 class="text-3xl font-bold text-indigo-600 mb-4 tracking-tight">พิกัดดาวรายวัน (ยึดตามเรฟ Excel ตัวเต็ม)</h1>
-            <p class="text-slate-500 text-base mb-8">กวาดข้อมูลครบทุกคอลัมน์ ดาว ๑ - ๙ และข้อมูลประกอบโครงสร้างสมบูรณ์</p>
-
-            <div class="text-left mb-8">
-                <label class="block text-slate-800 font-bold text-base mb-3">ช่วงปี ค.ศ. ที่ต้องการข้อมูล (2021 - 2027)</label>
-                <div class="grid grid-cols-2 gap-6">
-                    <div>
-                        <span class="text-slate-400 text-sm block mb-1.5">เริ่มต้น</span>
-                        <input type="number" id="startYear" value="2021" min="2021" max="2027" 
-                               class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-lg font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition shadow-sm">
-                    </div>
-                    <div>
-                        <span class="text-slate-400 text-sm block mb-1.5">สิ้นสุด</span>
-                        <input type="number" id="endYear" value="2022" min="2021" max="2027" 
-                               class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-lg font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition shadow-sm">
-                    </div>
+            <h1 class="text-2xl font-bold text-slate-700 mb-6 tracking-tight">พิกัดดาวรายวัน (เวอร์ชัน Vercel Fast Fast)</h1>
+            
+            <div class="text-left mb-8 space-y-4">
+                <div>
+                    <label class="block text-slate-800 font-bold text-base mb-2">เลือกปี พ.ศ. (2021 - 2027)</label>
+                    <input type="number" id="targetYear" value="2024" min="2021" max="2027" 
+                           class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-lg font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition shadow-sm">
+                </div>
+                
+                <div>
+                    <label class="block text-slate-800 font-bold text-base mb-2">เลือกเดือนที่ต้องการข้อมูล</label>
+                    <select id="targetMonth" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-lg font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition shadow-sm">
+                        <option value="1">มกราคม</option>
+                        <option value="2">กุมภาพันธ์</option>
+                        <option value="3">มีนาคม</option>
+                        <option value="4">เมษายน</option>
+                        <option value="5">พฤษภาคม</option>
+                        <option value="6">มิถุนายน</option>
+                        <option value="7">กรกฎาคม</option>
+                        <option value="8">สิงหาคม</option>
+                        <option value="9">กันยายน</option>
+                        <option value="10">ตุลาคม</option>
+                        <option value="11">พฤศจิกายน</option>
+                        <option value="12">ธันวาคม</option>
+                    </select>
                 </div>
             </div>
 
             <button id="exportBtn" onclick="downloadExcel()" 
                     class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-4 rounded-xl transition duration-200 shadow-lg flex justify-center items-center gap-3 text-lg">
-                📁 ดาวน์โหลดข้อมูลโครงสร้าง Excel เรฟ (<span id="btnText">2021 - 2022</span>)
+                📁 ดาวน์โหลดโครงสร้าง Excel เรฟตัวเต็ม
             </button>
             
             <p id="statusMessage" class="text-center text-sm text-indigo-500 font-medium hidden mt-6 bg-indigo-50 p-3 rounded-xl border border-indigo-100">
-                ⏳ บอทกำลังดึงพิกัดดวงดาวรายวันตามโครงสร้างเรฟไฟล์เต็ม กรุณารอประมาณ 1-2 นาทีนะคะ^^
+                ⏳ บอทคลาวด์กำลังกวาดพิกัดดาวรายวันให้แบบด่วนพิเศษ กรุณารอสักครู่นะคะ^^
             </p>
         </div>
 
         <script>
-            const startInput = document.getElementById('startYear');
-            const endInput = document.getElementById('endYear');
-            const btnText = document.getElementById('btnText');
-
-            function updateButtonText() {
-                btnText.innerText = startInput.value + ' - ' + endInput.value;
-            }
-            startInput.addEventListener('input', updateButtonText);
-            endInput.addEventListener('input', updateButtonText);
-
             function downloadExcel() {
-                const start = startInput.value;
-                const end = endInput.value;
+                const year = document.getElementById('targetYear').value;
+                const month = document.getElementById('targetMonth').value;
                 const status = document.getElementById('statusMessage');
                 const btn = document.getElementById('exportBtn');
                 
-                if (parseInt(start) > parseInt(end)) {
-                    alert('❌ ปีเริ่มต้น ต้องไม่มากกว่า ปีสิ้นสุด กรุณาตรวจสอบและแก้ไขให้ถูกต้องค่ะ');
-                    return;
-                }
-
                 status.classList.remove('hidden');
                 btn.disabled = true;
                 btn.classList.add('opacity-50');
 
-                window.location.href = '/export-excel?start=' + start + '&end=' + end;
+                window.location.href = '/export-excel?year=' + year + '&month=' + month;
 
                 setTimeout(() => {
-                    status.innerHTML = "✅ ดึงข้อมูลเรฟสำเร็จและดาวน์โหลดแล้ว!";
+                    status.innerHTML = "✅ ดึงข้อมูลสำเร็จและดาวน์โหลดแล้ว!";
                     btn.disabled = false;
                     btn.classList.remove('opacity-50');
-                }, 90000);
+                }, 10000);
             }
         </script>
     </body>
@@ -89,14 +83,13 @@ app.get('/', (req, res) => {
 });
 
 app.get('/export-excel', async (req, res) => {
-    const startYear = parseInt(req.query.start) || 2021;
-    const endYear = parseInt(req.query.end) || 2027;
+    const cYear = parseInt(req.query.year) || 2024;
+    const month = parseInt(req.query.month) || 1;
+    const thYear = cYear + 543;
 
-    console.log(`[Vercel] กำลังสร้างไฟล์โครงสร้างตรงตามเรฟตารางดาว ค.ศ. ${startYear} - ${endYear}`);
-    
     let browser;
     try {
-        // 🛠️ จุดแก้ไขที่ 2: เปลี่ยนจาก chromium.launch() ไปเชื่อมต่อเซิร์ฟเวอร์เบราว์เซอร์ภายนอกแทน
+        // เชื่อมต่อบอทผ่านเบราว์เซอร์คลาวด์ภายนอกเพื่อหลีกเลี่ยงข้อจำกัด Vercel
         browser = await chromium.connectOverCDP(
             `wss://chrome.browserless.io?token=${BROWSERLESS_TOKEN}`
         );
@@ -132,63 +125,38 @@ app.get('/export-excel', async (req, res) => {
         ];
 
         const months_th = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+        const targetUrl = `https://myhora.com/calendar/astro-suriyayas-${month}-${thYear}.aspx`;
 
-        for (let cYear = startYear; cYear <= endYear; cYear++) {
-            const thYear = cYear + 543;
-            for (let month = 1; month <= 12; month++) {
-                const targetUrl = `https://myhora.com/calendar/astro-suriyayas-${month}-${thYear}.aspx`;
-                try {
-                    await page.goto(targetUrl, { waitUntil: 'load', timeout: 60000 });
-                    await page.waitForTimeout(1500); 
+        await page.goto(targetUrl, { waitUntil: 'load', timeout: 8000 });
 
-                    const extractedRows = await page.evaluate(() => {
-                        const rowsData = [];
-                        const trs = document.querySelectorAll('table tr');
-                        
-                        trs.forEach((tr) => {
-                            const tds = tr.querySelectorAll('td');
-                            if (tds.length >= 15) {
-                                const cells = Array.from(tds).map(td => td.innerText ? td.innerText.trim().replace(/\s+/g, ' ') : '');
-                                const dayNumber = parseInt(cells[0]);
-                                if (!isNaN(dayNumber) && dayNumber >= 1 && dayNumber <= 31) {
-                                    rowsData.push(cells);
-                                }
-                            }
-                        });
-                        return rowsData;
-                    });
-
-                    if (extractedRows && extractedRows.length > 0) {
-                        extractedRows.forEach(cells => {
-                            worksheet.addRow({
-                                year_en: cYear, year_th: thYear, month: months_th[month],
-                                index_no: cells[0] || '', day_th: cells[1] || '', cho_ro: cells[2] || '', do_num: cells[3] || '',
-                                sun: cells[4] || '', moon: cells[5] || '', yok_1: cells[6] || '', reuk: cells[7] || '', tem_1: cells[8] || '',
-                                dithi: cells[9] || '', tem_2: cells[10] || '', mars: cells[11] || '', mercury: cells[12] || '',
-                                jupiter: cells[13] || '', venus: cells[14] || '', saturn: cells[15] || '', rahu: cells[16] || '', ketu: cells[17] || ''
-                            });
-                        });
-                    } else {
-                        // โครงสร้างข้อมูลสำรองเรฟตัวเต็ม
-                        for (let d = 1; d <= 30; d++) {
-                            worksheet.addRow({
-                                year_en: cYear, year_th: thYear, month: months_th[month],
-                                index_no: d, day_th: 'มิกซ์', cho_ro: 'ร ' + (d%5), do_num: 10+d,
-                                sun: '07 14 ' + d, moon: '3 07 ' + d, yok_1: '08:' + d, reuk: '07 ' + d, tem_1: '15:' + d,
-                                dithi: 'ร 04 ' + d, tem_2: '12:' + d, mars: '7 ส 11 ' + d, mercury: '8 ม 02 ' + d,
-                                jupiter: '0 พ 13 ' + d, venus: '6   00 ' + d, saturn: '10  01 ' + d, rahu: '11 27 ' + d, ketu: '1 15 ' + d
-                            });
-                        }
-                    }
-                } catch (error) {
-                    for (let d = 1; d <= 28; d++) {
-                        worksheet.addRow({
-                            year_en: cYear, year_th: thYear, month: months_th[month], index_no: d, day_th: 'มิกซ์',
-                            sun: '07 14 34', moon: '3 07 57', mars: '7 ส 11 47', mercury: '8 ม 02 18', jupiter: '0 พ 13 29'
-                        });
+        const extractedRows = await page.evaluate(() => {
+            const rowsData = [];
+            const trs = document.querySelectorAll('table tr');
+            trs.forEach((tr) => {
+                const tds = tr.querySelectorAll('td');
+                if (tds.length >= 15) {
+                    const cells = Array.from(tds).map(td => td.innerText ? td.innerText.trim().replace(/\s+/g, ' ') : '');
+                    const dayNumber = parseInt(cells[0]);
+                    if (!isNaN(dayNumber) && dayNumber >= 1 && dayNumber <= 31) {
+                        rowsData.push(cells);
                     }
                 }
-            }
+            });
+            return rowsData;
+        });
+
+        if (extractedRows && extractedRows.length > 0) {
+            extractedRows.forEach(cells => {
+                worksheet.addRow({
+                    year_en: cYear, year_th: thYear, month: months_th[month],
+                    index_no: cells[0] || '', day_th: cells[1] || '', cho_ro: cells[2] || '', do_num: cells[3] || '',
+                    sun: cells[4] || '', moon: cells[5] || '', yok_1: cells[6] || '', reuk: cells[7] || '', tem_1: cells[8] || '',
+                    dithi: cells[9] || '', tem_2: cells[10] || '', mars: cells[11] || '', mercury: cells[12] || '',
+                    jupiter: cells[13] || '', venus: cells[14] || '', saturn: cells[15] || '', rahu: cells[16] || '', ketu: cells[17] || ''
+                });
+            });
+        } else {
+            throw new Error("โครงสร้างตารางบนเว็บปลายทางเปลี่ยนไปหรือไม่พบข้อมูล");
         }
 
         // ตกแต่งสไตล์หัวตารางสีน้ำเงิน Indigo
@@ -199,18 +167,17 @@ app.get('/export-excel', async (req, res) => {
         });
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename=Astro_Daily_Ref_Complete.xlsx`);
+        res.setHeader('Content-Disposition', `attachment; filename=Astro_Daily_Ref_${cYear}_${month}.xlsx`);
 
         await workbook.xlsx.write(res);
         res.end();
 
     } catch (err) {
-        console.error(err);
-        res.status(500).send(`เกิดข้อผิดพลาดภายในระบบ: ${err.message}`);
+        console.error("Vercel Function Error: ", err.message);
+        res.status(500).send(`ระบบแครชเนื่องจาก: ${err.message}`);
     } finally {
         if (browser) await browser.close();
     }
 });
 
-// 🛠️ จุดแก้ไขที่ 3: เอาชุดคำสั่ง app.listen ออก แล้วเปลี่ยนมา export app แทนเพื่อให้เวิร์กบน Vercel
 module.exports = app;
