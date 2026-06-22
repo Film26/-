@@ -1,8 +1,8 @@
 const express = require('express');
-const { chromium } = require('playwright');
+const https = require('https');
 const app = express();
 
-// 🛠️ สำคัญมาก: ต้องไปสมัครที่ browserless.io แล้วเอา Token ยาวๆ มาแปะตรงนี้ให้ถูกต้องนะคะ
+// 🛠️ สำคัญมาก: อย่าลืมใส่ Token ของ browserless.io ตรงนี้ให้ถูกต้องนะคะ
 const BROWSERLESS_TOKEN = "วาง_TOKEN_ของคุณตรงนี้"; 
 
 app.get('/', (req, res) => {
@@ -92,45 +92,55 @@ app.get('/get-astro-data', async (req, res) => {
     const month = parseInt(req.query.month) || 1;
     const thYear = cYear + 543;
 
-    let browser;
     try {
-        // ต่อเข้าคลาวด์ภายนอกตรงๆ ทำให้ไม่เรียกหา playwright-core ในตัว Vercel เอง
-        browser = await chromium.connectOverCDP(
-            `wss://chrome.browserless.io?token=${BROWSERLESS_TOKEN}`
-        );
-        
-        const context = await browser.newContext();
-        const page = await context.newPage();
-        
         const months_th = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
         const targetUrl = `https://myhora.com/calendar/astro-suriyayas-${month}-${thYear}.aspx`;
 
-        await page.goto(targetUrl, { waitUntil: 'load', timeout: 8000 });
+        const postData = JSON.stringify({ url: targetUrl });
+        const options = {
+            hostname: 'chrome.browserless.io',
+            path: `/content?token=${BROWSERLESS_TOKEN}`,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/vnd.api+json',
+                'Content-Length': Buffer.byteLength(postData)
+            }
+        };
 
-        const dataText = await page.evaluate((info) => {
-            let output = "ปี ค.ศ.,ปี พ.ศ.,เดือน,ที่,วัน,ข-ร,ด.,อาทิตย์ (๑),จันทร์ (๒),ยก,ฤกษ์,เต็ม,ดิถี,เต็ม,อังคาร (๓),พุธ (๔),พฤหัสฯ (๕),ศุกร์ (๖),เสาร์ (๗),ราหู (๘),เกตุ (๙)\\n";
-            const trs = document.querySelectorAll('table tr');
-            
-            trs.forEach((tr) => {
-                const tds = tr.querySelectorAll('td');
+        const requestPromise = () => new Promise((resolve, reject) => {
+            const reqHttps = https.request(options, (resHttps) => {
+                let data = '';
+                resHttps.on('data', (chunk) => { data += chunk; });
+                resHttps.on('end', () => { resolve(data); });
+            });
+            reqHttps.on('error', (e) => { reject(e); });
+            reqHttps.write(postData);
+            reqHttps.end();
+        });
+
+        const html = await requestPromise();
+        const trSplit = html.split('<tr');
+        let output = "ปี ค.ศ.,ปี พ.ศ.,เดือน,ที่,วัน,ข-ร,ด.,อาทิตย์ (๑),จันทร์ (๒),ยก,ฤกษ์,เต็ม,ดิถี,เต็ม,อังคาร (๓),พุธ (๔),พฤหัสฯ (๕),ศุกร์ (๖),เสาร์ (๗),ราหู (๘),เกตุ (๙)\\n";
+
+        for (let i = 0; i < trSplit.length; i++) {
+            const tr = trSplit[i];
+            if (tr.includes('</td>')) {
+                const tds = tr.split('</td>');
                 if (tds.length >= 15) {
-                    const cells = Array.from(tds).map(td => td.innerText ? td.innerText.trim().replace(/\\s+/g, ' ') : '');
+                    const cells = tds.map(td => td.replace(/<[^>]*>/g, '').trim().replace(/\\s+/g, ' '));
                     const dayNumber = parseInt(cells[0]);
                     if (!isNaN(dayNumber) && dayNumber >= 1 && dayNumber <= 31) {
-                        output += `\${info.cYear},\${info.thYear},\${info.mName},\${cells.join(',')}\\n`;
+                        output += `\${cYear},\${thYear},\${months_th[month]},\${cells.slice(0, 18).join(',')}\\n`;
                     }
                 }
-            });
-            return output;
-        }, { cYear, thYear, mName: months_th[month] });
+            }
+        }
 
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.send(dataText);
+        res.send(output);
 
     } catch (err) {
         res.status(500).send(`Error: ${err.message}`);
-    } finally {
-        if (browser) await browser.close();
     }
 });
 
