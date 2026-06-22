@@ -3,7 +3,7 @@ const https = require('https');
 const app = express();
 
 // 🛠️ สำคัญมาก: อย่าลืมใส่ Token ของ browserless.io ตรงนี้นะครับ
-const BROWSERLESS_TOKEN = "2UkUpBJYEWGXQtV8ed0840833adf67c95f617e75e67052a5e"; 
+const BROWSERLESS_TOKEN = "2UkUpBJYEWGXQtV8ed0840833adf67c95f617e75e67052a5e";
 
 app.get('/', (req, res) => {
     res.send(`
