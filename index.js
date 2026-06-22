@@ -1,9 +1,8 @@
 const express = require('express');
-const https = require('https');
-const ExcelJS = require('exceljs');
+const { chromium } = require('playwright');
 const app = express();
 
-// 🛠️ สำคัญมาก: ใส่ Token ของ browserless.io ตรงนี้ครับ
+// 🛠️ สำคัญมาก: ต้องไปสมัครที่ browserless.io แล้วเอา Token ยาวๆ มาแปะตรงนี้ให้ถูกต้องนะคะ
 const BROWSERLESS_TOKEN = "วาง_TOKEN_ของคุณตรงนี้"; 
 
 app.get('/', (req, res) => {
@@ -19,7 +18,7 @@ app.get('/', (req, res) => {
     <body class="bg-slate-100 min-h-screen flex items-center justify-center p-4">
         <div class="bg-white p-10 rounded-3xl shadow-2xl w-full max-w-xl border border-slate-50 text-center">
             <h1 class="text-3xl font-bold text-indigo-600 mb-2 tracking-tight">ระบบดึงข้อมูลปฏิทินดาราศาสตร์</h1>
-            <h1 class="text-2xl font-bold text-slate-700 mb-6 tracking-tight">พิกัดดาวรายวัน (เวอร์ชันเสถียรที่สุด)</h1>
+            <h1 class="text-2xl font-bold text-slate-700 mb-6 tracking-tight">พิกัดดาวรายวัน (เวอร์ชันปลอดภัย)</h1>
             
             <div class="text-left mb-8 space-y-4">
                 <div>
@@ -47,34 +46,40 @@ app.get('/', (req, res) => {
                 </div>
             </div>
 
-            <button id="exportBtn" onclick="downloadExcel()" 
+            <button id="exportBtn" onclick="downloadData()" 
                     class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-4 rounded-xl transition duration-200 shadow-lg flex justify-center items-center gap-3 text-lg">
-                📁 ดาวน์โหลดโครงสร้าง Excel เรฟตัวเต็ม
+                📁 ดึงข้อมูลพิกัดดาวรายวัน
             </button>
             
-            <p id="statusMessage" class="text-center text-sm text-indigo-500 font-medium hidden mt-6 bg-indigo-50 p-3 rounded-xl border border-indigo-100">
-                ⏳ ระบบกำลังกวาดพิกัดดาวและประกอบตารางให้ กรุณารอสักครู่นะคะ^^
-            </p>
+            <div id="resultBox" class="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-200 text-left hidden">
+                <p class="text-sm font-bold text-slate-700 mb-2">💡 คัดลอกข้อมูลด้านล่างนี้ไปวางใน Excel ได้เลยค่ะ:</p>
+                <textarea id="csvOutput" class="w-full h-48 p-2 bg-white border rounded-lg font-mono text-xs focus:outline-none" readonly></textarea>
+            </div>
         </div>
 
         <script>
-            function downloadExcel() {
+            async function downloadData() {
                 const year = document.getElementById('targetYear').value;
                 const month = document.getElementById('targetMonth').value;
-                const status = document.getElementById('statusMessage');
                 const btn = document.getElementById('exportBtn');
+                const resultBox = document.getElementById('resultBox');
+                const csvOutput = document.getElementById('csvOutput');
                 
-                status.classList.remove('hidden');
                 btn.disabled = true;
-                btn.classList.add('opacity-50');
+                btn.innerHTML = "⏳ กำลังดึงข้อมูล...";
 
-                window.location.href = '/export-excel?year=' + year + '&month=' + month;
-
-                setTimeout(() => {
-                    status.innerHTML = "✅ สำเร็จแล้ว!";
+                try {
+                    const response = await fetch('/get-astro-data?year=' + year + '&month=' + month);
+                    const text = await response.text();
+                    
+                    resultBox.classList.remove('hidden');
+                    csvOutput.value = text;
+                    btn.innerHTML = "📁 ดึงข้อมูลสำเร็จ!";
+                } catch (err) {
+                    alert("เกิดข้อผิดพลาดในการดึงข้อมูลค่ะ");
+                } finally {
                     btn.disabled = false;
-                    btn.classList.remove('opacity-50');
-                }, 6000);
+                }
             }
         </script>
     </body>
@@ -82,103 +87,50 @@ app.get('/', (req, res) => {
     `);
 });
 
-app.get('/export-excel', async (req, res) => {
+app.get('/get-astro-data', async (req, res) => {
     const cYear = parseInt(req.query.year) || 2024;
     const month = parseInt(req.query.month) || 1;
     const thYear = cYear + 543;
 
+    let browser;
     try {
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('ตารางพิกัดดาวรายวัน');
-
-        worksheet.columns = [
-            { header: 'ปี ค.ศ.', key: 'year_en', width: 10 },
-            { header: 'ปี พ.ศ.', key: 'year_th', width: 10 },
-            { header: 'เดือน', key: 'month', width: 14 },
-            { header: 'ที่', key: 'index_no', width: 6 },
-            { header: 'วัน', key: 'day_th', width: 6 },
-            { header: 'ข-ร', key: 'cho_ro', width: 8 },
-            { header: 'ด.', key: 'do_num', width: 6 },
-            { header: 'อาทิตย์ (๑)', key: 'sun', width: 12 },
-            { header: 'จันทร์ (๒)', key: 'moon', width: 12 },
-            { header: 'ยก', key: 'yok_1', width: 10 },
-            { header: 'ฤกษ์', key: 'reuk', width: 12 },
-            { header: 'เต็ม', key: 'tem_1', width: 10 },
-            { header: 'ดิถี', key: 'dithi', width: 12 },
-            { header: 'เต็ม', key: 'tem_2', width: 10 },
-            { header: 'อังคาร (๓)', key: 'mars', width: 12 },
-            { header: 'พุธ (๔)', key: 'mercury', width: 12 },
-            { header: 'พฤหัสฯ (๕)', key: 'jupiter', width: 12 },
-            { header: 'ศุกร์ (๖)', key: 'venus', width: 12 },
-            { header: 'เสาร์ (๗)', key: 'saturn', width: 12 },
-            { header: 'ราหู (๘)', key: 'rahu', width: 12 },
-            { header: 'เกตุ (๙)', key: 'ketu', width: 12 }
-        ];
-
+        // ต่อเข้าคลาวด์ภายนอกตรงๆ ทำให้ไม่เรียกหา playwright-core ในตัว Vercel เอง
+        browser = await chromium.connectOverCDP(
+            `wss://chrome.browserless.io?token=${BROWSERLESS_TOKEN}`
+        );
+        
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        
         const months_th = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
         const targetUrl = `https://myhora.com/calendar/astro-suriyayas-${month}-${thYear}.aspx`;
 
-        // ใช้โมดูลอินทิเกรตพื้นฐานของ Node.js ยิงหา Browserless เพื่อความเสถียรสูงสุดบน Vercel
-        const postData = JSON.stringify({ url: targetUrl });
-        const options = {
-            hostname: 'chrome.browserless.io',
-            path: `/content?token=${BROWSERLESS_TOKEN}`,
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/vnd.api+json',
-                'Content-Length': Buffer.byteLength(postData)
-            }
-        };
+        await page.goto(targetUrl, { waitUntil: 'load', timeout: 8000 });
 
-        const requestPromise = () => new Promise((resolve, reject) => {
-            const reqHttps = https.request(options, (resHttps) => {
-                let data = '';
-                resHttps.on('data', (chunk) => { data += chunk; });
-                resHttps.on('end', () => { resolve(data); });
-            });
-            reqHttps.on('error', (e) => { reject(e); });
-            reqHttps.write(postData);
-            reqHttps.end();
-        });
-
-        const html = await requestPromise();
-        const trSplit = html.split('<tr');
-
-        for (let i = 0; i < trSplit.length; i++) {
-            const tr = trSplit[i];
-            if (tr.includes('</td>')) {
-                const tds = tr.split('</td>');
+        const dataText = await page.evaluate((info) => {
+            let output = "ปี ค.ศ.,ปี พ.ศ.,เดือน,ที่,วัน,ข-ร,ด.,อาทิตย์ (๑),จันทร์ (๒),ยก,ฤกษ์,เต็ม,ดิถี,เต็ม,อังคาร (๓),พุธ (๔),พฤหัสฯ (๕),ศุกร์ (๖),เสาร์ (๗),ราหู (๘),เกตุ (๙)\\n";
+            const trs = document.querySelectorAll('table tr');
+            
+            trs.forEach((tr) => {
+                const tds = tr.querySelectorAll('td');
                 if (tds.length >= 15) {
-                    const cells = tds.map(td => td.replace(/<[^>]*>/g, '').trim().replace(/\s+/g, ' '));
+                    const cells = Array.from(tds).map(td => td.innerText ? td.innerText.trim().replace(/\\s+/g, ' ') : '');
                     const dayNumber = parseInt(cells[0]);
                     if (!isNaN(dayNumber) && dayNumber >= 1 && dayNumber <= 31) {
-                        worksheet.addRow({
-                            year_en: cYear, year_th: thYear, month: months_th[month],
-                            index_no: cells[0] || '', day_th: cells[1] || '', cho_ro: cells[2] || '', do_num: cells[3] || '',
-                            sun: cells[4] || '', moon: cells[5] || '', yok_1: cells[6] || '', reuk: cells[7] || '', tem_1: cells[8] || '',
-                            dithi: cells[9] || '', tem_2: cells[10] || '', mars: cells[11] || '', mercury: cells[12] || '',
-                            jupiter: cells[13] || '', venus: cells[14] || '', saturn: cells[15] || '', rahu: cells[16] || '', ketu: cells[17] || ''
-                        });
+                        output += `\${info.cYear},\${info.thYear},\${info.mName},\${cells.join(',')}\\n`;
                     }
                 }
-            }
-        }
+            });
+            return output;
+        }, { cYear, thYear, mName: months_th[month] });
 
-        worksheet.getRow(1).eachCell((cell) => {
-            cell.font = { bold: true, color: { argb: 'FFFFFF' }, name: 'Arial', size: 11 };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4F46E5' } };
-            cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-        });
-
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename=Astro_Daily_${cYear}_${month}.xlsx`);
-
-        await workbook.xlsx.write(res);
-        res.end();
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.send(dataText);
 
     } catch (err) {
-        console.error("Vercel Function Error: ", err.message);
-        res.status(500).send(`ระบบแครชเนื่องจาก: ${err.message}`);
+        res.status(500).send(`Error: ${err.message}`);
+    } finally {
+        if (browser) await browser.close();
     }
 });
 
