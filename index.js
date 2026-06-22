@@ -14,6 +14,7 @@ app.get('/', (req, res) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>ระบบส่งออกข้อมูลปฏิทินโหราศาสตร์</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -22,7 +23,6 @@ app.get('/', (req, res) => {
         </style>
     </head>
     <body class="bg-[#f0f4f9] min-h-screen flex items-center justify-center p-4">
-        <!-- การ์ดดีไซน์ตามเรฟภาพ image_554e00.png -->
         <div class="bg-white p-12 rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.05)] w-full max-w-xl text-center border border-slate-100">
             
             <h1 class="text-[32px] font-bold text-[#5046e5] leading-tight mb-2">
@@ -51,13 +51,11 @@ app.get('/', (req, res) => {
                 </div>
             </div>
 
-            <!-- ปุ่มสีน้ำเงิน/ม่วงตามสไตล์ในภาพเรฟ -->
             <button id="exportBtn" onclick="startExport()" 
                     class="w-full bg-[#5046e5] hover:bg-[#4338ca] text-white font-medium py-4 px-6 rounded-xl transition duration-200 shadow-[0_4px_15px_rgba(80,70,229,0.3)] flex justify-center items-center gap-2 text-[17px]">
                 📁 <span id="btnText">ดาวน์โหลดไฟล์ Excel (2021 - 2027)</span>
             </button>
             
-            <!-- กล่องแสดงสถานะและความก้าวหน้า -->
             <div id="progressBox" class="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-200 text-left hidden">
                 <div class="flex justify-between text-xs font-bold text-slate-600 mb-2">
                     <span id="statusText">⏳ กำลังเตรียมระบบ...</span>
@@ -66,11 +64,13 @@ app.get('/', (req, res) => {
                 <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
                     <div id="progressBar" class="bg-[#5046e5] h-full w-0 transition-all duration-300"></div>
                 </div>
-                <textarea id="csvAccumulator" class="w-full h-32 p-2 bg-white border rounded-lg font-mono text-[10px] mt-3 focus:outline-none hidden" readonly></textarea>
             </div>
         </div>
 
         <script>
+            // อาเรย์สำหรับเก็บแถวข้อมูลทั้งหมดเพื่อไปแปลงเป็น Excel
+            let allRowsData = [];
+
             function updateBtnText() {
                 const start = document.getElementById('startYear').value;
                 const end = document.getElementById('endYear').value;
@@ -85,7 +85,6 @@ app.get('/', (req, res) => {
                 const statusText = document.getElementById('statusText');
                 const percentText = document.getElementById('percentText');
                 const progressBar = document.getElementById('progressBar');
-                const csvAccumulator = document.getElementById('csvAccumulator');
 
                 if (startYear > endYear) {
                     alert('ปีเริ่มต้น ต้องไม่มากกว่าปีสิ้นสุดนะคะ');
@@ -95,9 +94,14 @@ app.get('/', (req, res) => {
                 btn.disabled = true;
                 btn.classList.add('opacity-50');
                 progressBox.classList.remove('hidden');
-                csvAccumulator.value = "ปี ค.ศ.,ปี พ.ศ.,เดือน,ที่,วัน,ข-ร,ด.,อาทิตย์ (๑),จันทร์ (๒),ยก,ฤกษ์,เต็ม,ดิถี,เต็ม,อังคาร (๓),พุธ (๔),พฤหัสฯ (๕),ศุกร์ (๖),เสาร์ (๗),ราหู (๘),เกตุ (๙)\\n";
+                
+                // กำหนดหัวตาราง (Header) สำหรับ Excel ล่วงหน้า
+                allRowsData = [[
+                    "ปี ค.ศ.", "ปี พ.ศ.", "เดือน", "ที่", "วัน", "ข-ร", "ด.", 
+                    "อาทิตย์ (๑)", "จันทร์ (๒)", "ยก", "ฤกษ์", "เต็ม", "ดิถี", "เต็ม", 
+                    "อังคาร (๓)", "พุธ (๔)", "พฤหัสฯ (๕)", "ศุกร์ (๖)", "เสาร์ (๗)", "ราหู (๘)", "เกตุ (๙)"
+                ]];
 
-                // คำนวณจำนวนรอบงานทั้งหมด (ปี x 12 เดือน)
                 const totalTasks = (endYear - startYear + 1) * 12;
                 let currentTask = 0;
 
@@ -113,26 +117,37 @@ app.get('/', (req, res) => {
                         try {
                             const response = await fetch('/get-astro-data?year=' + y + '&month=' + m);
                             if (response.ok) {
-                                const chunkData = await response.text();
-                                csvAccumulator.value += chunkData;
+                                const chunkText = await response.text();
+                                if (chunkText.trim()) {
+                                    // แปลงข้อความที่ตอบกลับมาเป็นแถวออบเจกต์เพื่อเตรียมเข้า SheetJS
+                                    const lines = chunkText.split('\\n');
+                                    lines.forEach(line => {
+                                        if (line.trim()) {
+                                            const cells = line.split(',');
+                                            if (cells.length >= 15) {
+                                                allRowsData.push(cells);
+                                            }
+                                        }
+                                    });
+                                }
                             }
                         } catch (e) {
-                            console.error('Skip error at:', y, m);
+                            console.error('Error at:', y, m);
                         }
                     }
                 }
 
-                statusText.innerText = '✅ รวมไฟล์ CSV สำเร็จ! กำลังเริ่มดาวน์โหลด...';
+                statusText.innerText = '⚙️ กำลังประกอบไฟล์ .xlsx คุณภาพสูง...';
                 
-                // แปลงข้อความเป็นไฟล์ CSV ให้กดดาวน์โหลดอัตโนมัติ
-                const blob = new Blob([csvAccumulator.value], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement("a");
-                link.href = URL.createObjectURL(blob);
-                link.setAttribute("download", "Astro_Data_" + startYear + "_" + endYear + ".csv");
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                // 🔥 เริ่มกระบวนการแปลงข้อมูลเป็นไฟล์ .xlsx แท้ๆ ด้วย SheetJS
+                const worksheet = XLSX.utils.aoa_to_sheet(allRowsData);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "ตารางพิกัดดาวรายวัน");
+                
+                // สั่งดาวน์โหลดลงเครื่องทันที
+                XLSX.writeFile(workbook, "Astro_Data_" + startYear + "_" + endYear + ".xlsx");
 
+                statusText.innerText = '✅ ดาวน์โหลดไฟล์ Excel สำเร็จแล้วค่ะ!';
                 btn.disabled = false;
                 btn.classList.remove('opacity-50');
             }
