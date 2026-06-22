@@ -94,7 +94,6 @@ app.get('/', (req, res) => {
                 btn.classList.add('opacity-50');
                 progressBox.classList.remove('hidden');
                 
-                // ตั้งหัวคอลัมน์ให้ตรงเป๊ะกับไฟล์เรฟ Excel ของคุณ
                 allRowsData = [[
                     "ปี ค.ศ.", "ปี พ.ศ.", "เดือน", "ที่", "วัน", "ข-ร", "ด.", 
                     "อาทิตย์ (๑)", "จันทร์ (๒)", "ยก", "ฤกษ์", "เต็ม", "ดิถี", "เต็ม", 
@@ -118,7 +117,6 @@ app.get('/', (req, res) => {
                             if (response.ok) {
                                 const result = await response.json();
                                 if (result && result.length > 0) {
-                                    // นำแถวข้อมูลที่ได้มาผลักลงตาราง Excel
                                     allRowsData = allRowsData.concat(result);
                                 }
                             }
@@ -128,9 +126,8 @@ app.get('/', (req, res) => {
                     }
                 }
 
-                statusText.innerText = '⚙️ กำลังแปลงโครงสร้างเข้าไฟล์ .xlsx...';
+                statusText.innerText = '⚙️ กำลังประกอบไฟล์ .xlsx คุณภาพสูง...';
                 
-                // สร้างไฟล์ Excel แท้ ๆ ด้วยไลบรารี SheetJS
                 const worksheet = XLSX.utils.aoa_to_sheet(allRowsData);
                 const workbook = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(workbook, worksheet, "ตารางพิกัดดาวรายวัน");
@@ -156,13 +153,18 @@ app.get('/get-astro-data', async (req, res) => {
         const months_th = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
         const targetUrl = `https://myhora.com/calendar/astro-suriyayas-${month}-${thYear}.aspx`;
 
-        const postData = JSON.stringify({ url: targetUrl });
+        // สั่งให้ browserless ดึงข้อมูลพร้อมแกะ Text ภายใน td ออกมาเป็น Array เพื่อหลบเลี่ยงโครงสร้าง HTML ที่ซับซ้อน
+        const postData = JSON.stringify({
+            url: targetUrl,
+            elements: [{ selector: 'table tr' }]
+        });
+
         const options = {
             hostname: 'chrome.browserless.io',
-            path: `/content?token=${BROWSERLESS_TOKEN}`,
+            path: `/scrape?token=${BROWSERLESS_TOKEN}`, // เปลี่ยนไปใช้โหมด /scrape เพื่อความแม่นยำสูง
             method: 'POST',
             headers: {
-                'Content-Type': 'application/vnd.api+json',
+                'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(postData)
             }
         };
@@ -178,54 +180,39 @@ app.get('/get-astro-data', async (req, res) => {
             reqHttps.end();
         });
 
-        const html = await requestPromise();
-        const trSplit = html.split('<tr');
+        const rawResult = await requestPromise();
+        const jsonResult = JSON.parse(rawResult);
         const rowsArray = [];
 
-        for (let i = 0; i < trSplit.length; i++) {
-            const tr = trSplit[i];
-            if (tr.includes('</td>')) {
-                const tds = tr.split('</td>');
-                if (tds.length >= 15) {
-                    // แกะ Tag HTML ออกให้เหลือแต่ Text บริสุทธิ์
-                    const cells = tds.map(td => td.replace(/<[^>]*>/g, '').trim().replace(/\s+/g, ' '));
-                    const dayNumber = parseInt(cells[0]);
-                    
-                    // คัดกรองเอาเฉพาะแถวที่เป็นวันที่ 1-31 จริง ๆ
-                    if (!isNaN(dayNumber) && dayNumber >= 1 && dayNumber <= 31) {
-                        rowsArray.push([
-                            cYear, 
-                            thYear, 
-                            months_th[month], 
-                            cells[0] || '', // ที่
-                            cells[1] || '', // วัน
-                            cells[2] || '', // ข-ร
-                            cells[3] || '', // ด.
-                            cells[4] || '', // อาทิตย์ (๑)
-                            cells[5] || '', // จันทร์ (๒)
-                            cells[6] || '', // ยก
-                            cells[7] || '', // ฤกษ์
-                            cells[8] || '', // เต็ม
-                            cells[9] || '', // ดิถี
-                            cells[10] || '', // เต็ม
-                            cells[11] || '', // อังคาร (๓)
-                            cells[12] || '', // พุธ (๔)
-                            cells[13] || '', // พฤหัสฯ (๕)
-                            cells[14] || '', // ศุกร์ (๖)
-                            cells[15] || '', // เสาร์ (๗)
-                            cells[16] || '', // ราหู (๘)
-                            cells[17] || ''  // เกตุ (๙)
-                        ]);
+        if (jsonResult.data && jsonResult.data[0] && jsonResult.data[0].results) {
+            const trResults = jsonResult.data[0].results;
+
+            trResults.forEach(trObj => {
+                // ดึง text ข้างใน tr มาสปลิตเพื่อหาค่าของแต่ละ td
+                if (trObj.text) {
+                    const cells = trObj.text.split('\t').map(c => c.trim()).filter(c => c !== '');
+                    if (cells.length >= 15) {
+                        const dayNumber = parseInt(cells[0]);
+                        if (!isNaN(dayNumber) && dayNumber >= 1 && dayNumber <= 31) {
+                            rowsArray.push([
+                                cYear, thYear, months_th[month],
+                                cells[0] || '', cells[1] || '', cells[2] || '', cells[3] || '',
+                                cells[4] || '', cells[5] || '', cells[6] || '', cells[7] || '',
+                                cells[8] || '', cells[9] || '', cells[10] || '', cells[11] || '',
+                                cells[12] || '', cells[13] || '', cells[14] || '', cells[15] || '',
+                                cells[16] || '', cells[17] || ''
+                            ]);
+                        }
                     }
                 }
-            }
+            });
         }
 
-        // ส่งกลับเป็นรูปแบบ JSON อาเรย์ข้อมูลที่ถูกต้องปลอดภัย
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.json(rowsArray);
 
     } catch (err) {
+        console.error(err);
         res.status(500).json([]);
     }
 });
