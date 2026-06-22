@@ -126,7 +126,7 @@ app.get('/', (req, res) => {
                     }
                 }
 
-                statusText.innerText = '⚙️ กำลังประกอบไฟล์ .xlsx คุณภาพสูง...';
+                statusText.innerText = '⚙️ กำลังประกอบไฟล์ .xlsx...';
                 
                 const worksheet = XLSX.utils.aoa_to_sheet(allRowsData);
                 const workbook = XLSX.utils.book_new();
@@ -153,15 +153,10 @@ app.get('/get-astro-data', async (req, res) => {
         const months_th = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
         const targetUrl = `https://myhora.com/calendar/astro-suriyayas-${month}-${thYear}.aspx`;
 
-        // สั่งให้ browserless ดึงข้อมูลพร้อมแกะ Text ภายใน td ออกมาเป็น Array เพื่อหลบเลี่ยงโครงสร้าง HTML ที่ซับซ้อน
-        const postData = JSON.stringify({
-            url: targetUrl,
-            elements: [{ selector: 'table tr' }]
-        });
-
+        const postData = JSON.stringify({ url: targetUrl });
         const options = {
             hostname: 'chrome.browserless.io',
-            path: `/scrape?token=${BROWSERLESS_TOKEN}`, // เปลี่ยนไปใช้โหมด /scrape เพื่อความแม่นยำสูง
+            path: `/content?token=${BROWSERLESS_TOKEN}`, // กลับมาใช้ตัวจับเว็บดั้งเดิมแบบเสถียร
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -180,39 +175,61 @@ app.get('/get-astro-data', async (req, res) => {
             reqHttps.end();
         });
 
-        const rawResult = await requestPromise();
-        const jsonResult = JSON.parse(rawResult);
+        const html = await requestPromise();
+        
+        // ใช้การสปลิตตารางแบบยืดหยุ่นสูง เพื่อป้องกันกรณีโครงสร้างคลาสเปลี่ยน
+        const trSplit = html.split(/<tr[^>]*>/i);
         const rowsArray = [];
 
-        if (jsonResult.data && jsonResult.data[0] && jsonResult.data[0].results) {
-            const trResults = jsonResult.data[0].results;
+        for (let i = 0; i < trSplit.length; i++) {
+            const tr = trSplit[i];
+            if (tr.includes('</td>') || tr.includes('</TD>')) {
+                // สปลิตแต่ละคอลัมน์ด้วย td ปิด
+                const tds = tr.split(/<\/td>/i);
+                if (tds.length >= 15) {
+                    // ทำความสะอาดเอาโค้ด HTML Tag ออกทั้งหมดให้เหลือแค่คำเดี่ยวๆ
+                    const cells = tds.map(td => {
+                        return td.replace(/<[^>]*>/g, '') // ลบ Tag ทั้งหมด
+                                 .replace(/&nbsp;/gi, ' ') // แปลง Space ขยะ
+                                 .trim()
+                                 .replace(/\s+/g, ' ');
+                    });
 
-            trResults.forEach(trObj => {
-                // ดึง text ข้างใน tr มาสปลิตเพื่อหาค่าของแต่ละ td
-                if (trObj.text) {
-                    const cells = trObj.text.split('\t').map(c => c.trim()).filter(c => c !== '');
-                    if (cells.length >= 15) {
-                        const dayNumber = parseInt(cells[0]);
-                        if (!isNaN(dayNumber) && dayNumber >= 1 && dayNumber <= 31) {
-                            rowsArray.push([
-                                cYear, thYear, months_th[month],
-                                cells[0] || '', cells[1] || '', cells[2] || '', cells[3] || '',
-                                cells[4] || '', cells[5] || '', cells[6] || '', cells[7] || '',
-                                cells[8] || '', cells[9] || '', cells[10] || '', cells[11] || '',
-                                cells[12] || '', cells[13] || '', cells[14] || '', cells[15] || '',
-                                cells[16] || '', cells[17] || ''
-                            ]);
-                        }
+                    const dayNumber = parseInt(cells[0]);
+                    // ล็อกค่าให้เฉพาะแถวที่ขึ้นต้นด้วยวันที่ 1 ถึง 31 ผ่านเท่านั้น
+                    if (!isNaN(dayNumber) && dayNumber >= 1 && dayNumber <= 31) {
+                        rowsArray.push([
+                            cYear, 
+                            thYear, 
+                            months_th[month], 
+                            cells[0] || '', // ที่
+                            cells[1] || '', // วัน
+                            cells[2] || '', // ข-ร
+                            cells[3] || '', // ด.
+                            cells[4] || '', // อาทิตย์ (๑)
+                            cells[5] || '', // จันทร์ (๒)
+                            cells[6] || '', // ยก
+                            cells[7] || '', // ฤกษ์
+                            cells[8] || '', // เต็ม
+                            cells[9] || '', // ดิถี
+                            cells[10] || '', // เต็ม
+                            cells[11] || '', // อังคาร (๓)
+                            cells[12] || '', // พุธ (๔)
+                            cells[13] || '', // พฤหัสฯ (๕)
+                            cells[14] || '', // ศุกร์ (๖)
+                            cells[15] || '', // เสาร์ (๗)
+                            cells[16] || '', // ราหู (๘)
+                            cells[17] || ''  // เกตุ (๙)
+                        ]);
                     }
                 }
-            });
+            }
         }
 
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.json(rowsArray);
 
     } catch (err) {
-        console.error(err);
         res.status(500).json([]);
     }
 });
